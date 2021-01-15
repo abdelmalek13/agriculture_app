@@ -3,6 +3,7 @@ from start_page import startPage
 from water_analysis import waterAnalysis
 from blue_et import blueEt
 from grey_water import greyWater
+from collections import OrderedDict
 
 
 
@@ -19,17 +20,16 @@ class App(tk.Tk):
         self.container.grid_rowconfigure(0, weight=1)
         self.container.grid_columnconfigure(0, weight=1)
 
-        self.generate_frames()
-
-    def generate_frames(self):
         self.frames = {}
-        for F in (startPage, waterAnalysis, blueEt, greyWater):
-            frame = F(self.container, self)
-            self.frames[F] = frame
+        for F,name in zip([startPage, waterAnalysis, blueEt, greyWater],
+                       ["startPage", "waterAnalysis", "blueEt", "greyWater"]):
+            # print(name)
+            frame = F(self.container, self, self.frames)
+            self.frames[name] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             self.pack_propagate(False)
 
-        self.show_frame(startPage)
+        self.show_frame("startPage")
 
     def show_frame(self, cont):
         frame = self.frames[cont]

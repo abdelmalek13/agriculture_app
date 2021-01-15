@@ -6,7 +6,7 @@ NORM_FONT = ("Verdana", 10)
 
 
 class greyWater(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames):
         super().__init__(parent)
         self.controller = controller
         self.saved_flag = False

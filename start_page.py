@@ -1,14 +1,19 @@
 import tkinter as tk
 import tkinter.ttk as ttk
 from water_analysis import waterAnalysis
+import os
+import uuid
 
 LARGE_FONT = ("Verdana", 12)
 
 
 class startPage(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames):
         super().__init__(parent)
         self.controller = controller
+        self.frames = frames
+        # print(self.frames)
+        self.generate_session()
         main_frame = tk.Frame(self)
         main_frame.place(in_=self, anchor='c', relx=.5, rely=.5)
 
@@ -153,4 +158,14 @@ for Multi crops""")
 
     def open_water_analysis(self,n_crops, n_years, n_regions):
         if not (n_regions or n_crops or n_years):
-            self.controller.show_frame(waterAnalysis)
+            self.controller.show_frame("waterAnalysis")
+
+    def generate_session(self):
+        path = os.path.join(os.getcwd(),"sessions")
+        last_sessions = [int(x.split()[-1]) for x in os.listdir(path) if x]
+        if last_sessions:
+            session = "session " + str(max(last_sessions)+1)
+            os.mkdir(os.path.join(path,session))
+        else:
+            session = "session " + str(1)
+            os.mkdir(os.path.join(path,session))

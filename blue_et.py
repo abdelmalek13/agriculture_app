@@ -5,6 +5,10 @@ import pandas as pd
 import os
 from tkinter import filedialog
 import water_analysis
+from utils import check_date, compare_dates, compare_values, check_field_type
+import fao
+import math
+
 
 NORM_FONT = ("Verdana", 10)
 LARGE_FONT = ("Verdana", 12)
@@ -28,26 +32,22 @@ def cleanDate(date):
 
 
 class blueEt(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames):
         super().__init__(parent)
         self.controller = controller
-
         s = ttk.Style()
         s.configure("TNotebook.Tab", font=NORM_FONT)
         tab_parent = ttk.Notebook(self)
+        internal_frames = dict()
+        # texts = ["ETo", "ETc", "Rainfall", "Soil data", "Blue ET"]
+        for F,name,text in zip([tabOne, tabTwo, tabThree, tabFour, tabFive],
+                       ["tabOne", "tabTwo", "tabThree", "tabFour", "tabFive"],
+                       ["ETo", "ETc", "Rainfall", "Soil data", "Blue ET"]):
+            frame = F(tab_parent, self, frames, internal_frames)
+            internal_frames[name] = frame
+            tab_parent.add(frame, text=text)
 
-        tab1 = tabOne(tab_parent, self)
-        tab2 = tabTwo(tab_parent, self)
-        tab3 = tabThree(tab_parent, self)
-        tab4 = tabFour(tab_parent, self)
-        tab5 = tabFive(tab_parent, self.controller)
         #
-        tab_parent.add(tab1, text="ETo")
-        tab_parent.add(tab2, text="ETc")
-        tab_parent.add(tab3, text="Rainfall")
-        tab_parent.add(tab4, text="Soil data")
-        tab_parent.add(tab5, text="Blue ET")
-
         tab_parent.grid_propagate(False)
         tab_parent.pack(expand=True, fill='both')
         # tab_parent.grid(col=True, fill="both")
@@ -56,8 +56,9 @@ LARGE_FONT = ("Verdana", 12)
 
 
 class tabOne(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames, internal_frames):
         super().__init__(parent)
+        self.frames = frames
 
         top_frame = tk.LabelFrame(self, bd=3, height=75, width=750,
                                   text="Location Data", relief="groove",
@@ -79,8 +80,8 @@ class tabOne(tk.Frame):
         alt_frame.grid(row=0, column=0, padx=5, pady=5, sticky='e')
         alt_lbl = ttk.Label(alt_frame, text="Altitude")
         alt_lbl.grid(row=0, column=0, sticky="w")
-        alt_ent = ttk.Entry(alt_frame)
-        alt_ent.grid(row=0, column=1, sticky='nsew')
+        self.alt_ent = ttk.Entry(alt_frame)
+        self.alt_ent.grid(row=0, column=1, sticky='nsew')
         alt_metric_lbl = ttk.Label(alt_frame, text="m")
         alt_metric_lbl.grid(row=0, column=2, sticky="e")
 
@@ -88,8 +89,8 @@ class tabOne(tk.Frame):
         lat_frame.grid(row=0, column=1, padx=5, pady=5)
         lat_lbl = ttk.Label(lat_frame, text="Latitude")
         lat_lbl.grid(row=0, column=0, sticky="w")
-        lat_ent = ttk.Entry(lat_frame)
-        lat_ent.grid(row=0, column=1, sticky='nsew')
+        self.lat_ent = ttk.Entry(lat_frame)
+        self.lat_ent.grid(row=0, column=1, sticky='nsew')
         self.lat_metric_v = tk.StringVar()
         self.lat_metric_options = ["N", "S"]
         self.lat_metric_v.set(self.lat_metric_options[0])
@@ -102,8 +103,8 @@ class tabOne(tk.Frame):
         long_frame.grid(row=0, column=2, padx=5, pady=5)
         long_lbl = ttk.Label(long_frame, text="Longitude")
         long_lbl.grid(row=0, column=0, sticky="w")
-        long_ent = ttk.Entry(long_frame)
-        long_ent.grid(row=0, column=1, sticky='nsew')
+        self.long_ent = ttk.Entry(long_frame)
+        self.long_ent.grid(row=0, column=1, sticky='nsew')
         self.long_metric_v = tk.StringVar()
         self.long_metric_options = ["W", "E"]
         self.lat_metric_v.set(self.lat_metric_options[0])
@@ -135,21 +136,21 @@ class tabOne(tk.Frame):
         table_frame = tk.Frame(lower_frame, height=300, width=500, bg="grey",
                                bd=3)
         table_frame.pack(side=tk.LEFT, pady=10)
-        scrl_table_frame = ScrollableFrame(table_frame, height=300, width=500,
+        self.scrl_table_frame = ScrollableFrame(table_frame, height=300, width=500,
                                            borderwidth=3, add_x=True)
-        scrl_table_frame.pack(fill='both')
-        scrl_table_frame.grid_propagate(False)
-        scrl_table_frame.pack_propagate(False)
-        start_date = "20/02"
-        end_date = "15/03"
-        days_list = calculateDays(start_date, end_date)
-        headers, df = self.format_table(days_list)
+        self.scrl_table_frame.pack(fill='both')
+        self.scrl_table_frame.grid_propagate(False)
+        self.scrl_table_frame.pack_propagate(False)
+        start_date = "01/01/2020"
+        end_date = "01/01/2020"
+        self.days_list = calculateDays(start_date, end_date)
+        headers, df = self.format_table(self.days_list)
         header_units = ["", u'\N{DEGREE SIGN}C', u'\N{DEGREE SIGN}C', "%",
                         "km/day", "hours", "mm/day"]
-        self.table_obj = tableWidget(scrl_table_frame.scrollable_frame, df=df,
+        self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame, df=df,
                                      headers=headers,
                                      header_units=header_units,
-                                     rows=len(days_list)+1,
+                                     rows=len(self.days_list)+1,
                                      columns=len(headers),
                                      font=False)
         self.table_obj.pack(fill='both', expand=True)
@@ -162,41 +163,185 @@ class tabOne(tk.Frame):
         save_but = ttk.Button(but_frame, text="Save", command=self.saveFile)
         save_but.pack(pady=5, fill="x", side=tk.BOTTOM)
 
+        calc_but = ttk.Button(but_frame, text="Calculate",
+                              command=self.checkValues)
+        calc_but.pack(pady=5, fill="x", side=tk.BOTTOM)
+
         import_but = ttk.Button(but_frame, text="Import",
                                 command=self.importFile)
         import_but.pack(pady=5, fill="x", side=tk.BOTTOM)
 
-        calc_but = ttk.Button(but_frame, text="Calculate",
-                              command=self.calculate)
-        calc_but.pack(pady=5, fill="x", side=tk.BOTTOM)
+        table_but = ttk.Button(but_frame, text="Form table", command=self.build_table)
+        table_but.pack(pady=5, fill="x", side=tk.BOTTOM)
 
-        self.status_bar = tk.Label(self, relief="groove",
+        load_but = ttk.Button(but_frame, text="Load", command=self.loadData)
+        load_but.pack(pady=5, fill="x", side=tk.BOTTOM)
+
+        note_lbl = tk.Label(self, relief="groove",
                                    text="Any missing fields will be asssumed"+\
                                    " equal to zero")
-        self.status_bar.pack(side=tk.BOTTOM, fill='x')
+        note_lbl.pack(side=tk.BOTTOM, fill='x')
 
-    def calculate(self):
+        self.status_v = tk.StringVar()
+        self.status_v.set("Welcome...")
+        self.status_bar = tk.Label(self, relief="groove", anchor=tk.W,
+                                   textvariable=self.status_v, font=NORM_FONT)
+        self.status_bar.pack(side=tk.BOTTOM, fill='x', anchor='s')
+        self.status_bar.config(fg="black")
+
+    def checkValues(self):
+        for row in range(len(self.days_list)-1):
+            # print(len(self.days_list))
+            valid = True
+            mintemp, maxtemp, humidity, wind, sunhours = self.table_obj.read_row(row+2, 7)
+            for x in [mintemp, maxtemp, humidity, wind, sunhours]:
+                valid = check_field_type(x, float,
+                                    "ERROR, a field is not a number!! on day"\
+                                    " {}".format(self.days_list[row]),
+                                    status_var=self.status_v,
+                                    status_bar=self.status_bar)
+                if not valid:
+                    return None
+            # print(mintemp, maxtemp, humidity, wind, sunhours)
+            if valid:
+                valid = compare_values(maxtemp, mintemp,
+                              "ERROR!, The Min Temp value on day {}"\
+                              " is greater than the Max Temp".format(
+                                self.days_list[row]),
+                              status_var=self.status_v,
+                              status_bar=self.status_bar) and\
+                    compare_values(100, humidity, "ERROR!, Humidity on day"\
+                            " {} shouldn't exceed 100".format(
+                                self.days_list[row]),
+                            status_var=self.status_v,
+                            status_bar=self.status_bar) and\
+                    compare_values(humidity, 0, "ERROR!, Humidity on day {}"\
+                            "shouldn't be less than 0".format(
+                                self.days_list[row]),
+                            status_var=self.status_v,
+                            status_bar=self.status_bar) and\
+                    compare_values(sunhours, 0, "ERROR!, Sun Hours on day {}"\
+                            "shouldn't be less than 0".format(
+                                self.days_list[row]),
+                            status_var=self.status_v,
+                            status_bar=self.status_bar) and\
+                    compare_values(24, sunhours, "ERROR!, Sun Hours on day"\
+                            " {} shouldn't exceed 25".format(
+                                self.days_list[row]),
+                            status_var=self.status_v,
+                            status_bar=self.status_bar)
+                # print("passed",row)
+                if valid:
+                    valid = check_field_type(self.alt_ent.get(), float,"ERROR!, "\
+                                             "Altitude value isn't a number",
+                                             status_var=self.status_v,
+                                             status_bar=self.status_bar) and\
+                        check_field_type(self.lat_ent.get(), float,"ERROR!, "\
+                                         "Latitude value isn't a number",
+                                         status_var=self.status_v,
+                                         status_bar=self.status_bar) and\
+                        check_field_type(self.long_ent.get(), float,"ERROR!, "\
+                                         "Longitude value isn't a number",
+                                         status_var=self.status_v,
+                                         status_bar=self.status_bar)
+                        # check_date(self.lat_ent, "ERROR!, Harvesting date"\
+                        #            " value isn't a date",
+                        #            status_var=self.status_v,
+                        #            status_bar=self.status_bar)
+                        #
+                if valid :
+                    eto = self.calculate(mintemp, maxtemp, humidity, wind,
+                                         sunhours)
+                    eto = mintemp + maxtemp + humidity + wind + sunhours
+                    if eto:
+                        print(mintemp, maxtemp, humidity, wind, sunhours )
+                        self.table_obj.set(row, 6, eto)
+                    self.status_v.set("DONE")
+                    self.status_bar.config(fg="black")
+
+    def calculate_eto(self, mintemp, maxtemp, fmon=True):
+        altitude = float(self.alt_ent.get())
+        longitude = float(self.long_ent.get())
+        avg_temp = (maxtemp + mintemp) / 2
+        slope_sat_vpc = 4098*0.6108*math.exp((17.27*avg_temp)/(avg_temp+237.3))
+        slope_sat_vpc = slope_sat_vpc/((avg_temp*273.3)**2)
+
+
+
+
+
+    def get_start_date(self):
+        return self.frames['waterAnalysis'].date_ent.get()+"/"+\
+            self.frames['waterAnalysis'].year_ent.get()
+
+
+    def build_table(self):
+        if check_date(self.harvest_outlbl, "%d/%m/%Y",
+                      "ERROR, The Date isn't in the correct format!!",
+                      status_var=self.status_v, status_bar=self.status_bar):
+            start_date = self.plant_outlbl.get()
+            end_date = self.harvest_outlbl.get()
+            print(start_date, end_date)
+            if compare_dates(end_date, start_date,"ERROR!, The harvest date \
+should be after the plant date by atleast 60 days", status_var=self.status_v,
+status_bar=self.status_bar):
+                self.status_v.set("Table formatted")
+                self.status_bar.config(fg="black")
+                self.days_list = calculateDays(start_date, end_date)
+                headers, df = self.format_table(self.days_list)
+                header_units = ["", u'\N{DEGREE SIGN}C', u'\N{DEGREE SIGN}C', "%",
+                                "km/day", "hours", "mm/day"]
+                self.table_obj.destroy()
+                self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame, df=df,
+                                             headers=headers,
+                                             header_units=header_units,
+                                             rows=len(self.days_list)+1,
+                                             columns=len(headers),
+                                             font=False)
+                self.table_obj.pack(fill='both', expand=True)
+
+    def calculate(self, mintemp, maxtemp, humidity, wind, sunhours):
+        # print(self.frames.keys())
+        # print(self.frames['waterAnalysis'].yield_ent.get())
         pass
+
+    def loadData(self):
+        self.crop_outlbl.config(state="normal")
+        self.crop_outlbl.delete(0, 'end')
+        self.crop_outlbl.insert(0, self.frames['waterAnalysis'].crop_v.get())
+        self.crop_outlbl.config(state="readonly")
+
+        self.plant_outlbl.config(state="normal")
+        self.plant_outlbl.delete(0, 'end')
+        self.plant_outlbl.insert(0, self.get_start_date())
+        self.plant_outlbl.config(state="readonly")
+
 
     def importFile(self):
         path = os.getcwd()
         importbox = filedialog.askopenfile(mode='r', initialdir=path,
                                            title="Select file",
                                            filetypes=(("CSV files", "*.csv"),
+                                                      ("EXCEL files", "*.xlsx"),
                                                       ("all files", "*.*")),
                                            defaultextension=".csv")
 
-        # headers= ["Min\nTemp", "Max\nTemp", "Humidity", "Wind", 'Sun\nhours']
-        data = pd.read_csv(importbox, index_col=None, usecols=["Min\nTemp",
-                                                               "Max\nTemp",
-                                                               "Humidity",
-                                                               "Wind",
-                                                               'Sun\nhours']
-                           ).fillna("0")
+        headers= ["mintemp", "maxtemp", "humidity", "wind", 'sunhours']
+        if importbox.name.split(".")[-1] == "xlsx":
+            data = pd.read_excel(importbox.name, sheet_name=0).fillna("0")
+        else:
+            data = pd.read_csv(importbox.name, index_col=None).fillna("0")
+        cols = [col for col in data.columns if col.lower().replace(" ","") in headers]
+        mod_cols = [col.lower().replace(" ","") for col in cols]
+        data = data[cols]
+        for i,header in enumerate(headers) :
+            if header not in mod_cols:
+                data.insert(i, header, ["0"]*data.shape[0])
         r, c = data.shape
         for row in range(r):
             for col in range(c):
-                self.table_obj.insert_text(row=row+1, column=col+1,
+
+                self.table_obj.insert_text(row=row+2, column=col+1,
                                            value=data.iloc[row, col])
         importbox.close()
 
@@ -216,24 +361,26 @@ class tabOne(tk.Frame):
         savebox = filedialog.asksaveasfile(mode='w', initialdir=path,
                                            title="Select file",
                                            filetypes=(("CSV files", "*.csv"),
+                                                      ("EXCEL files", "*.xlsx"),
                                                       ("all files", "*.*")),
                                            defaultextension=".csv")
         if savebox:
-            # text_data = str('HEEEEEEYYYYY')
-            # days_list = range(1,10)
-            # df=pd.DataFrame({"Day":days_list,"Min\nTemp":['']*len(days_list),
-            #                    "Max\nTemp":['']*len(days_list),
-            #                    "Humidity":['']*len(days_list),
-            #                    "Wind":['']*len(days_list),
-            #                    'Sun\nhours':['']*len(days_list),
-            #                    "Eto":["0"]*len(days_list)})
-            df.to_csv(savebox, index=False)
+            headers = ["Day", "Min Temp", "Max Temp", "Humidity", "Wind",
+                       'Sun hours', "ETo"]
+            df = pd.DataFrame({headers[i]:self.table_obj.read_column(i,
+                len(self.days_list)) for i in range(len(headers))})
+            # print(df)
+            if savebox.name.split(".")[-1] == "xlsx":
+                df.to_excel(savebox.name, index=False, header=True, columns=headers)
+            else:
+                df.to_csv(savebox.name, index=False, header=True, columns=headers)
             savebox.close()
 
 
 class tabTwo(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames, internal_frames):
         super().__init__(parent)
+        self.internal_frames = internal_frames
         main_frame = tk.Frame(self)
         main_frame.place(in_=self, anchor='c', relx=.5, rely=.5)
 
@@ -272,11 +419,11 @@ class tabTwo(tk.Frame):
         stage_mid_lbl.grid(row=0, column=2, padx=5, pady=2)
         stage_mid_ent = tk.Entry(mid_frame)
         stage_mid_ent.grid(row=0, column=3, padx=5, pady=2)
-        kc2_mid_lbl = tk.Label(mid_frame, text="Kc (Cal)")
-        kc2_mid_lbl.grid(row=1, column=0, padx=5, pady=2)
-        kc2_mid_but = ttk.Button(mid_frame, text="Calculate",
-                                 command=self.calculateMid)
-        kc2_mid_but.grid(row=1, column=1, padx=5, pady=2)
+        # kc2_mid_lbl = tk.Label(mid_frame, text="Kc (Cal)")
+        # kc2_mid_lbl.grid(row=1, column=0, padx=5, pady=2)
+        # kc2_mid_but = ttk.Button(mid_frame, text="Calculate",
+        #                          command=self.calculateMid)
+        # kc2_mid_but.grid(row=1, column=1, padx=5, pady=2)
         crop_mid_lbl = tk.Label(mid_frame, text="Crop height (m)")
         crop_mid_lbl.grid(row=1, column=2, padx=5, pady=2)
         crop_mid_ent = tk.Entry(mid_frame)
@@ -296,11 +443,11 @@ class tabTwo(tk.Frame):
         stage_late_lbl.grid(row=0, column=2, padx=5, pady=2)
         stage_late_ent = tk.Entry(late_frame)
         stage_late_ent.grid(row=0, column=3, padx=5, pady=2)
-        kc2_late_lbl = tk.Label(late_frame, text="Kc (Cal)")
-        kc2_late_lbl.grid(row=1, column=0, padx=5, pady=2)
-        kc2_late_but = ttk.Button(late_frame, text="Calculate",
-                                  command=self.calculateLate)
-        kc2_late_but.grid(row=1, column=1, padx=5, pady=2)
+        # kc2_late_lbl = tk.Label(late_frame, text="Kc (Cal)")
+        # kc2_late_lbl.grid(row=1, column=0, padx=5, pady=2)
+        # kc2_late_but = ttk.Button(late_frame, text="Calculate",
+        #                           command=self.calculateLate)
+        # kc2_late_but.grid(row=1, column=1, padx=5, pady=2)
         crop_late_lbl = tk.Label(late_frame, text="Crop height (m)")
         crop_late_lbl.grid(row=1, column=2, padx=5, pady=2)
         crop_late_ent = tk.Entry(late_frame)
@@ -311,18 +458,21 @@ class tabTwo(tk.Frame):
         table_frame.pack(pady=10)
         table_frame.grid_propagate(False)
         table_frame.pack_propagate(False)
-        scrl_table_frame = ScrollableFrame(table_frame, height=400, width=300,
+        self.scrl_table_frame = ScrollableFrame(table_frame, height=400, width=300,
                                            borderwidth=3, add_x=True)
-        scrl_table_frame.pack(fill="y", expand=True)
-        scrl_table_frame.grid_propagate(False)
-        scrl_table_frame.pack_propagate(False)
-        start_date = "20/02"
-        end_date = "15/03"
-        days_list = calculateDays(start_date, end_date)
-        headers, df = self.format_table(days_list)
+        self.scrl_table_frame.pack(fill="y", expand=True)
+        self.scrl_table_frame.grid_propagate(False)
+        self.scrl_table_frame.pack_propagate(False)
+
+        start_date = "01/01/2020"
+        end_date = "01/01/2020"
+        self.days_list = calculateDays(start_date, end_date)
+
+        headers, df = self.format_table()
         header_units = ["", "mm/day", "", "mm/day"]
-        self.table_obj = tableWidget(scrl_table_frame.scrollable_frame, df=df,
-                                     rows=len(days_list)+1,
+        self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame,
+                                     df=df,
+                                     rows=len(self.days_list)+1,
                                      header_units=header_units,
                                      columns=len(headers), headers=headers,
                                      font=False)
@@ -340,65 +490,163 @@ class tabTwo(tk.Frame):
                                 command=self.importFile)
         import_but.grid(row=0, column=1, padx=5, pady=5)
 
-        insert_but = ttk.Button(but_frame, text="Insert",
-                                command=self.InsertData)
+        insert_but = ttk.Button(but_frame, text="Load",
+                                command=self.build_table)
         insert_but.grid(row=0, column=2, padx=5, pady=5)
+
+        calc_but = ttk.Button(but_frame, text="Calculate",
+                                command=self.calculate)
+        calc_but.grid(row=0, column=3, padx=5, pady=5)
+
+        self.status_v = tk.StringVar()
+        self.status_v.set("Welcome...")
+        self.status_bar = tk.Label(but_frame, relief="groove", anchor=tk.W,
+                                   textvariable=self.status_v, font=NORM_FONT)
+        self.status_bar.pack(side=tk.BOTTOM, fill='x', anchor='s')
+        self.status_bar.config(fg="black")
+
+    def checkCalculate(self):
+        all_stages = float(self.stage_mid_ent.get()) +\
+            float(self.stage_init_ent.get()) + float(self.stage_late_ent.get())
+        print(len(self.days_list))
+        valid = compare_values(all_stages, len(self.days_list),
+                               "The summation of all stages should be more"\
+                               " than or equal to the difference between the"\
+                               " harvesting date and the plant date",
+                               status_var=self.status_v,
+                               status_bar=self.status_bar)
+        if valid:
+            valid = compare_values(1, float(self.kc_late_ent.get()),
+                                   "Kc in the late stage should be less "\
+                                   "than 1", status_var=self.status_v,
+                                   status_bar=self.status_bar)
+        if valid:
+            self.calculate()
+
+
+    def build_table(self):
+        if check_date(self.internal_frames['tabOne'].harvest_outlbl,
+                      "%d/%m/%Y",
+                      "ERROR, The Date isn't in the correct format!!",
+                      status_var=self.status_v, status_bar=self.status_bar):
+            start_date = self.internal_frames['tabOne'].get_start_date()
+            end_date = self.internal_frames['tabOne'].harvest_outlbl.get()
+
+            if compare_dates(end_date, start_date,"ERROR!, The harvest date \
+    should be after the plant date by atleast 60 days", status_var=self.status_v,
+    status_bar=self.status_bar):
+                self.status_v.set("Table formatted")
+                self.status_bar.config(fg="black")
+                self.days_list = self.internal_frames['tabOne'].days_list
+                headers, df = self.format_table()
+                header_units = ["", "mm/day", "", "mm/day"]
+                print(self.days_list)
+                df['ETo'] = self.internal_frames['tabOne'].table_obj\
+                    .read_column(6, len(self.days_list))
+                self.table_obj.destroy()
+                self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame, df=df,
+                                             headers=headers,
+                                             header_units=header_units,
+                                             rows=len(self.days_list)+1,
+                                             columns=len(headers),
+                                             font=False)
+                self.table_obj.pack(fill='both', expand=True)
+
+
 
     def calculate(self):
         pass
 
     def InsertData(self):
-        pass
+        eto = self.table_obj.read_column(6, len(self.days_list))
+        print(len(self.days_list))
+        for r in row:
+            self.table_obj.insert_text(row=r+2, column=1,
+                                       value=eto[r])
+
 
     def importFile(self):
         path = os.getcwd()
         importbox = filedialog.askopenfile(mode='r', initialdir=path,
                                            title="Select file",
                                            filetypes=(("CSV files", "*.csv"),
+                                                      ("EXCEL files", "*.xlsx"),
                                                       ("all files", "*.*")),
                                            defaultextension=".csv")
-        # headers=["Min\nTemp", "Max\nTemp", "Humidity", "Wind", 'Sun\nhours']
-        data = pd.read_csv(importbox, index_col=None, usecols=["Min\nTemp",
-                                                               "Max\nTemp",
-                                                               "Humidity",
-                                                               "Wind",
-                                                               'Sun\nhours']
-                           ).fillna("0")
+
+        headers= ["day", "eto", "kc", "etc"]
+        if importbox.name.split(".")[-1] == "xlsx":
+            data = pd.read_excel(importbox.name, sheet_name=0).fillna("0")
+        else:
+            data = pd.read_csv(importbox.name, index_col=None).fillna("0")
+        cols = [col for col in data.columns if col.lower().replace(" ","") in headers]
+        mod_cols = [col.lower().replace(" ","") for col in cols]
+        data = data[cols]
+        for i,header in enumerate(headers) :
+            if header not in mod_cols:
+                data.insert(i, header, ["0"]*data.shape[0])
+        r, c = data.shape
+        for row in range(r):
+            for col in range(c):
+
+                self.table_obj.insert_text(row=row+2, column=col+1,
+                                           value=data.iloc[row, col])
         importbox.close()
 
     def saveFile(self):
-        pass
+        path = os.getcwd()
+        savebox = filedialog.asksaveasfile(mode='w', initialdir=path,
+                                           title="Select file",
+                                           filetypes=(("CSV files", "*.csv"),
+                                                      ("EXCEL files", "*.xlsx"),
+                                                      ("all files", "*.*")),
+                                           defaultextension=".csv")
+        if savebox:
 
-    def calculateMid(self):
-        pass
+            headers = ["Day", "ETo", "Kc", "ETc"]
+            df = pd.DataFrame({headers[i]:self.table_obj.read_column(i,
+                len(self.days_list)) for i in range(len(headers))})
+            # print(df)
+            if savebox.name.split(".")[-1] == "xlsx":
+                df.to_excel(savebox.name, index=False, header=True, columns=headers)
+            else:
+                df.to_csv(savebox.name, index=False, header=True, columns=headers)
+            savebox.close()
 
-    def calculateLate(self):
-        pass
-
-    def format_table(self, days_list):
+    def format_table(self):
         headers = ["Day", "ETo", "Kc", "ETc"]
-        df = pd.DataFrame({"Day": days_list,
-                           "ETo": ["0"]*len(days_list),
-                           "Kc": ["0"]*len(days_list),
-                           "ETc": ["0"]*len(days_list)}, columns=headers)
+        df = pd.DataFrame({"Day": self.days_list,
+                           "ETo": ["0"]*len(self.days_list),
+                           "Kc": ["0"]*len(self.days_list),
+                           "ETc": ["0"]*len(self.days_list)}, columns=headers)
         return headers, df
 
 
 class tabThree(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller,frames, internal_frames):
         super().__init__(parent)
+        self.internal_frames = internal_frames
         main_frame = tk.Frame(self, height=500, width=350)
         main_frame.pack()
 
-        left_frame = tk.Frame(main_frame, width=200, height=200, bd=3,
-                              relief="groove")
+        left_frame = tk.Frame(main_frame, width=200, height=200)
         left_frame.pack(side=tk.LEFT, padx=10, pady=10, anchor="n")
 
         self.set_radio_vars()
 
+        self.left_status_frame = tk.Frame(left_frame, width=200, height=25, bd=3,
+                              relief="groove")
+        self.left_status_frame.pack(side=tk.BOTTOM, padx=10, pady=10,expand=True, fill='x')
+        self.left_status_frame.grid_propagate(False)
+        self.left_status_frame.pack_propagate(False)
+
+        left_main_frame = tk.Frame(left_frame, width=200, height=175, bd=3,
+        relief="groove")
+        left_main_frame.pack(side=tk.BOTTOM, padx=10, pady=10, anchor='n')
+
         for self.p_val, self.p_opt in enumerate(self.p_options):
             if not self.p_val:
-                temp = tk.Frame(left_frame)
+                temp = tk.Frame(left_main_frame)
                 temp.grid(row=0, column=0, sticky="w", pady=10, padx=10)
                 p_rad = ttk.Radiobutton(temp,
                                         text=self.p_opt,
@@ -411,7 +659,7 @@ class tabThree(tk.Frame):
                 perc_lbl = tk.Label(temp, text='%')
                 perc_lbl.grid(row=0, column=2)
             else:
-                p_rad = ttk.Radiobutton(left_frame,
+                p_rad = ttk.Radiobutton(left_main_frame,
                                         text=self.p_opt,
                                         variable=self.p_v,
                                         value=self.p_val)
@@ -425,18 +673,19 @@ class tabThree(tk.Frame):
         table_frame.pack(pady=10)
         table_frame.grid_propagate(False)
         table_frame.pack_propagate(False)
-        scrl_table_frame = ScrollableFrame(table_frame, height=500, width=225,
+        self.scrl_table_frame = ScrollableFrame(table_frame, height=500, width=225,
                                            borderwidth=3, add_x=True)
-        scrl_table_frame.pack(fill="y", expand=True)
-        scrl_table_frame.grid_propagate(False)
-        scrl_table_frame.pack_propagate(False)
-        start_date = "20/02"
-        end_date = "15/03"
-        days_list = calculateDays(start_date, end_date)
-        headers, df = self.format_table(days_list)
+        self.scrl_table_frame.pack(fill="y", expand=True)
+        self.scrl_table_frame.grid_propagate(False)
+        self.scrl_table_frame.pack_propagate(False)
+        start_date = "01/01/2020"
+        end_date = "01/01/2020"
+        self.days_list = calculateDays(start_date, end_date)
+
+        headers, df = self.format_table()
         header_units = ["", "mm", "mm"]
-        self.table_obj = tableWidget(scrl_table_frame.scrollable_frame, df=df,
-                                     rows=len(days_list)+1,
+        self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame, df=df,
+                                     rows=len(self.days_list)+1,
                                      header_units=header_units,
                                      columns=len(headers), headers=headers,
                                      font=False)
@@ -458,11 +707,56 @@ class tabThree(tk.Frame):
                               command=self.calculate)
         calc_but.pack(pady=5, fill="x", side=tk.BOTTOM)
 
-    def format_table(self, days_list):
+        insert_but = ttk.Button(but_frame, text="Load",
+                                command=self.build_table)
+        insert_but.pack(pady=5, fill="x", side=tk.BOTTOM)
+
+        self.status_v = tk.StringVar()
+        self.status_v.set("Welcome...")
+        self.status_bar = tk.Label(self.left_status_frame, relief="groove", anchor=tk.W,
+                                   textvariable=self.status_v, font=NORM_FONT)
+        self.status_bar.pack(side=tk.BOTTOM, fill='x', anchor='s')
+        self.status_bar.config(fg="black")
+
+
+    def build_table(self):
+
+        self.left_status_frame.config(height=40)
+        if check_date(self.internal_frames['tabOne'].harvest_outlbl,
+                      "%d/%m/%Y",
+                      "ERROR, The Date isn't in \nthe correct format!!",
+                      status_var=self.status_v, status_bar=self.status_bar):
+            # self.left_status_frame.grid_propagate(False)
+            # self.left_status_frame.pack_propagate(False)
+            start_date = self.internal_frames['tabOne'].get_start_date()
+            end_date = self.internal_frames['tabOne'].harvest_outlbl.get()
+
+            self.left_status_frame.config(height=80)
+            if compare_dates(end_date, start_date,"ERROR!, The harvest date \n\
+    should be after the\n plant date by at \nleast 60 days", status_var=self.status_v,
+    status_bar=self.status_bar):
+                self.left_status_frame.config(height=20)
+                self.status_v.set("Table formatted")
+                self.status_bar.config(fg="black")
+                self.days_list = self.internal_frames['tabOne'].days_list
+                headers, df = self.format_table()
+                header_units = ["", "mm", "mm"]
+                # print(self.days_list)
+                self.table_obj.destroy()
+                self.table_obj = tableWidget(self.scrl_table_frame.scrollable_frame, df=df,
+                                             headers=headers,
+                                             header_units=header_units,
+                                             rows=len(self.days_list)+1,
+                                             columns=len(headers),
+                                             font=False)
+                self.table_obj.pack(fill='both', expand=True)
+
+
+    def format_table(self):
         headers = ["Day", "P", "Pe"]
-        df = pd.DataFrame({"Day": days_list,
-                           "P": ["0"]*len(days_list),
-                           "Pe": ["0"]*len(days_list)}, columns=headers)
+        df = pd.DataFrame({"Day": self.days_list,
+                           "P": ["0"]*len(self.days_list),
+                           "Pe": ["0"]*len(self.days_list)}, columns=headers)
         return headers, df
 
     def set_radio_vars(self):
@@ -505,7 +799,7 @@ class tabThree(tk.Frame):
 
 
 class tabFour(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames, internal_frames):
         super().__init__(parent)
         main_frame = tk.Frame(self, height=500, width=350, bd=0,
                               relief="groove")
@@ -779,7 +1073,7 @@ class tabFour(tk.Frame):
 
 
 class tabFive(tk.Frame):
-    def __init__(self, parent, controller):
+    def __init__(self, parent, controller, frames, internal_frames):
         super().__init__(parent)
         self.controller = controller
 
@@ -855,7 +1149,7 @@ class tabFive(tk.Frame):
 
     def nextPage(self):
 
-        self.controller.show_frame(water_analysis.waterAnalysis)
+        self.controller.show_frame("waterAnalysis")
 
     def saveFile(self):
         path = os.getcwd()
@@ -967,3 +1261,32 @@ class tableWidget(tk.Frame):
         widget = self._widgets[row][column]
         widget.delete("0", 'end')
         widget.insert('0', value)
+
+    def read_column(self, column, nrows):
+        data=[]
+        for row in range(2,nrows+1):
+            try:
+                # print(row, column)
+                val = self._widgets[row][column].get()
+            except AttributeError:
+                val = self._widgets[row][column].cget("text")
+            if val:
+                try:
+                    data.append(float(val))
+                except ValueError:
+                    data.append(val)
+            else:
+                data.append(0)
+        return data
+
+    def read_row(self, row, ncolumns):
+        data=[]
+        for column in range(1,ncolumns-1):
+            val = self._widgets[row][column].get()
+
+            try:
+                data.append(float(val))
+            except ValueError:
+                data.append(val)
+
+        return data
